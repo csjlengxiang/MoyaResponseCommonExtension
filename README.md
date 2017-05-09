@@ -1,7 +1,7 @@
-###Demo说明
+### Demo说明
 	本demo是针对Moya/RxSwift的Response，做的ObjectMapper扩展
 
-####针对解决如下常见问题
+#### 针对解决如下常见问题
 	通常后台返回的数据模型如下：
 	
 	struct CommonResponse<T: Mappable>: Mappable {
@@ -30,7 +30,7 @@
 	status = "unkown_error" | "invalid_session"
 	message = "未知错误" | "您的一台手机从其他地方登陆balabala"
 
-####解决方案
+#### 解决方案
 
 对Moya/RxSwift的Response做extension，增加一个mapResponse函数，采用ObjectMapper做json转换：
 		
@@ -56,9 +56,9 @@
         })
     }
     
-####然后就有新的问题了
+#### 然后就有新的问题了
 	对于CommonResponse我们肯定是要处理的，然而每次subscribe时候都在onError里写一坨代码也是很尴尬
-####解决方案
+#### 解决方案
 
 	继续extension，加入mapResponseAndThenSubscribe，我们先来看
 
