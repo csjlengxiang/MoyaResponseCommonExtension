@@ -22,6 +22,8 @@ class ViewController: UIViewController {
         
         self.tableView.dataSource = self
         
+        
+        
         viewModel.getCategories()
             .subscribe({ [unowned self] event in
                 

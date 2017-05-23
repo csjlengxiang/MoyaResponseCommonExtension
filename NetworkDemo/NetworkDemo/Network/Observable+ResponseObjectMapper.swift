@@ -11,6 +11,11 @@ import RxSwift
 import Moya
 import ObjectMapper
 
+public protocol IndicatorAble {
+    func startAnimating()
+    func stopAnimating()
+}
+
 struct CommonResponse<T: Mappable>: Mappable {
     var status: String?
     var message: String?
@@ -107,17 +112,24 @@ extension ObservableType where Self.E == Response {
         return self.mapResponse(type: EmptyResponse.self).map({ _ in Void() })
     }
     
-    public func mapResponseAndThenSubscribe<T: Mappable>(type: T.Type, onNext: @escaping ((T) -> Void), customizedOnError: @escaping ((ApiError) -> CustomizedOnErrorResult) = { _ in .useDefaultOnError((UIApplication.shared.keyWindow?.rootViewController
-)!) }) -> Disposable {
-        return self.mapResponse(type: T.self).subscribe(onNext: onNext, onError: { (error) in
+    public func mapResponseAndThenSubscribe<T: Mappable, V: IndicatorAble>(type: T.Type, onNext: @escaping ((T) -> Void), customizedOnError: @escaping ((ApiError) -> CustomizedOnErrorResult) = { _ in .useDefaultOnError((UIApplication.shared.keyWindow?.rootViewController
+        )!) }, indicator: V? = nil) -> Disposable {
+        
+        indicator?.startAnimating()
+        return self.mapResponse(type: T.self).subscribe(onNext: { (mappable) in
+            indicator?.stopAnimating()
+            onNext(mappable)
+        }, onError: { (error) in
             // transform err to apierr first
+            indicator?.stopAnimating()
             let apiError: ApiError = Self.transforErrorToApiError(error: error)
             switch customizedOnError(apiError) {
             case .handled: return
             case .useDefaultOnError(let vc):
                 Self.defaultOnError(apiError: apiError, vc: vc)
             }
-        }, onCompleted: nil, onDisposed: nil)
+        }, onCompleted: { indicator?.stopAnimating() },
+           onDisposed: { indicator?.stopAnimating() })
     }
     
     fileprivate static func defaultOnError(apiError: ApiError, vc: UIViewController) {
