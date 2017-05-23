@@ -24,6 +24,8 @@ class ViewController: UIViewController {
         
         viewModel.getCategories()
             .subscribe({ [unowned self] event in
+                
+                print (Thread.current)
                 switch event {
                 case .next(let models):
                     self.models = models.data?.data

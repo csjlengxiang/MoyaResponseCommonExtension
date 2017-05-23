@@ -26,15 +26,14 @@ struct CommonResponse<T: Mappable>: Mappable {
     }
 }
 
-public struct EmptyResponse: Mappable {
+struct EmptyResponse: Mappable {
     public init?(map: Map) { }
     public mutating func mapping(map: Map) { }
 }
 
-enum ResponseError: Swift.Error {
+public enum ResponseError: Swift.Error {
     case jsonMapping(Response)
-    case invalidSession(String)
-    case unknowErrorCode(String)
+    case unknowErrorCode(String, String)
 }
 
 extension ResponseError: LocalizedError {
@@ -42,18 +41,21 @@ extension ResponseError: LocalizedError {
         switch self {
         case .jsonMapping:
             return "response error json map"
-        case .invalidSession:
-            return "response error invalid session"
         case .unknowErrorCode:
             return "response error unknow error code"
         }
     }
 }
 
-enum ApiError: Swift.Error {
+public enum ApiError: Swift.Error {
     case moyaError(MoyaError)
     case responseError(ResponseError)
     case unkownError(Swift.Error)
+}
+
+public enum CustomizedOnErrorResult {
+    case handled
+    case useDefaultOnError(UIViewController)
 }
 
 extension ApiError: LocalizedError {
@@ -87,82 +89,55 @@ extension ObservableType where Self.E == Response {
             // try? 打算mapJSON err throw. 使用 ResponseError.jsonMapping
             guard let object = Mapper<CommonResponse<T>>().map(JSONObject: try? response.mapJSON()),
                 let status = object.status,
-                let _ = object.message,
+                let msg = object.message,
                 let data = object.data else {
                 throw ResponseError.jsonMapping(response)
             }
             
             if status == "ok" {
                 
-            } else if (status == "invalid_session") {
-                throw ResponseError.invalidSession(status)
             } else {
-                throw ResponseError.unknowErrorCode(status)
+                throw ResponseError.unknowErrorCode(status, msg)
             }
             return data
         })
     }
 
-    public func mapEmptyResponse() -> Observable<EmptyResponse> {
-        return self.mapResponse(type: EmptyResponse.self)
+    public func mapEmptyResponse() -> Observable<Void> {
+        return self.mapResponse(type: EmptyResponse.self).map({ _ in Void() })
     }
     
-    public func mapResponseAndThenSubscribe<T: Mappable>(type: T.Type, onNext: ((T) -> Void)? = nil, customizedOnError: ((Swift.Error) -> Bool)? = nil) -> Disposable {
-        
+    public func mapResponseAndThenSubscribe<T: Mappable>(type: T.Type, onNext: @escaping ((T) -> Void), customizedOnError: @escaping ((ApiError) -> CustomizedOnErrorResult) = { _ in .useDefaultOnError((UIApplication.shared.keyWindow?.rootViewController
+)!) }) -> Disposable {
         return self.mapResponse(type: T.self).subscribe(onNext: onNext, onError: { (error) in
-            if ((customizedOnError != nil) && customizedOnError!(error)) {
-                return
+            // transform err to apierr first
+            let apiError: ApiError = Self.transforErrorToApiError(error: error)
+            switch customizedOnError(apiError) {
+            case .handled: return
+            case .useDefaultOnError(let vc):
+                Self.defaultOnError(apiError: apiError, vc: vc)
             }
-            Self.onCommonError(error: error)
-            
         }, onCompleted: nil, onDisposed: nil)
     }
     
-    // onFailure return true 表示使用了自己的错误处理函数，即不使用通用错误处理
-    public func mapResponseAndThenSubscribe2<T: Mappable>(type: T.Type, onNext: ((T) -> Void)? = nil, customizedOnError: ((Swift.Error) -> Bool)? = nil) -> Disposable {
-        
-        let onResponseNext: ((E) -> Void) = { response in
-            guard let object = Mapper<CommonResponse<T>>().map(JSONObject: try? response.mapJSON()),
-                let status = object.status,
-                let _ = object.message,
-                let data = object.data else {
-                    Self.onCommonError(error: ApiError.responseError(ResponseError.jsonMapping(response)))
-                    return ;
-            }
-            if status == "ok" {
-                onNext?(data)
-            } else if (status == "invalid_session") {
-                Self.onCommonError(error: ApiError.responseError(ResponseError.invalidSession(status)))
-            } else {
-                Self.onCommonError(error: ApiError.responseError(ResponseError.unknowErrorCode(status)))
-            }
-        }
-    
-        let onResponseError: ((Swift.Error) -> Void)? = { err in
-            if ((customizedOnError != nil) && customizedOnError!(err)) {
-                return
-            }
-            Self.onCommonError(error: err)
-        }
-        
-        return self.subscribe(onNext: onResponseNext, onError: onResponseError, onCompleted: nil, onDisposed: nil)
-    }
-    
-    fileprivate static func onCommonError(error: Swift.Error) {
-        
-        let apiError: ApiError = Self.transforErrorToApiError(error: error)
+    fileprivate static func defaultOnError(apiError: ApiError, vc: UIViewController) {
         print (apiError.errorDescription!)
         
+        var msg = ""
         switch apiError {
         case .moyaError, .unkownError:
-            print ("process moya error: 网络不给力")
+            msg = "网络不给力"
         case .responseError(let responseError):
             switch responseError {
-            case .invalidSession:
-                print ("process response error: 请重新登陆啊")
             default:
-                print ("process response error: 服务器开了小差")
+                msg = "服务器开了小差"
             }
+        }
+        
+        let alert = UIAlertController(title: msg, message: nil, preferredStyle: .alert)
+        vc.present(alert, animated: true, completion: nil)
+        DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 2) { 
+            vc.dismiss(animated: true, completion: nil)
         }
     }
     
